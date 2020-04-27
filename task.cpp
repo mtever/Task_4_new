@@ -5,7 +5,10 @@
 #include <locale.h>
 #include <cilk/cilk.h>
 #include <cilk/reducer_opadd.h>
+#include <chrono>
 
+using namespace std::chrono;
+using namespace std;
 /// перечисление, определ€ющее как будет происходить вычисление
 /// средних значений матрицы: по строкам или по столбцам
 enum class eprocess_type
@@ -51,33 +54,39 @@ void PrintMatrix(double** matrix, const size_t numb_rows, const size_t numb_cols
 /// average_vals - массив, куда сохран€ютс€ вычисленные средние значени€
 void FindAverageValues(eprocess_type proc_type, double** matrix, const size_t numb_rows, const size_t numb_cols, double* average_vals)
 {
+	high_resolution_clock::time_point t2 = high_resolution_clock::now();
+	string name;
 	switch (proc_type)
 	{
 	case eprocess_type::by_rows:
 	{
-		cilk_for (size_t i = 0; i < numb_rows; ++i)
+		name = "Rows";
+		for (size_t i = 0; i < numb_rows; ++i)
 		{
-			//double sum(0.0);
-			cilk::reducer_opadd<double>sum(0.0);
-			cilk_for (size_t j = 0; j < numb_cols; ++j)
+			double sum(0.0);
+			for (size_t j = 0; j < numb_cols; ++j)
 			{
 				sum += matrix[i][j];
 			}
-			average_vals[i] = sum.get_value() / numb_cols;
+			average_vals[i] = sum / numb_cols;
 		}
+
 		break;
 	}
 	case eprocess_type::by_cols:
 	{
-		cilk_for (size_t j = 0; j < numb_cols; ++j)
+		name = "Cols";
+		for (size_t j = 0; j < numb_cols; ++j)
 		{
-			cilk::reducer_opadd<double>sum(0.0);
-			cilk_for (size_t i = 0; i < numb_rows; ++i)
+			double sum(0.0);
+			for (size_t i = 0; i < numb_rows; ++i)
 			{
 				sum += matrix[i][j];
 			}
-			average_vals[j] = sum.get_value() / numb_rows;
+			average_vals[j] = sum / numb_rows;
 		}
+
+		
 		break;
 	}
 	default:
@@ -85,6 +94,59 @@ void FindAverageValues(eprocess_type proc_type, double** matrix, const size_t nu
 		throw("Incorrect value for parameter 'proc_type' in function FindAverageValues() call!");
 	}
 	}
+	high_resolution_clock::time_point t1 = high_resolution_clock::now();
+	duration<double> duration = (t1 - t2);
+	printf("%s", name.c_str());
+	printf(" time parall is:: %lf sec\n\n", duration.count());
+}
+
+void parall_FindAverageValues(eprocess_type proc_type, double** matrix, const size_t numb_rows, const size_t numb_cols, double* average_vals)
+{
+	high_resolution_clock::time_point t2 = high_resolution_clock::now();
+	string name;
+	switch (proc_type)
+	{
+	case eprocess_type::by_rows:
+	{
+		name = "Rows";
+		cilk_for(size_t i = 0; i < numb_rows; ++i)
+		{
+			//double sum(0.0);
+			cilk::reducer_opadd<double>sum(0.0);
+			cilk_for(size_t j = 0; j < numb_cols; ++j)
+			{
+				sum += matrix[i][j];
+			}
+			average_vals[i] = sum.get_value() / numb_cols;
+		}
+
+		break;
+	}
+	case eprocess_type::by_cols:
+	{
+		name = "Cols";
+		cilk_for(size_t j = 0; j < numb_cols; ++j)
+		{
+			cilk::reducer_opadd<double>sum(0.0);
+			cilk_for(size_t i = 0; i < numb_rows; ++i)
+			{
+				sum += matrix[i][j];
+			}
+			average_vals[j] = sum.get_value() / numb_rows;
+		}
+
+
+		break;
+	}
+	default:
+	{
+		throw("Incorrect value for parameter 'proc_type' in function FindAverageValues() call!");
+	}
+	}
+	high_resolution_clock::time_point t1 = high_resolution_clock::now();
+	duration<double> duration = (t1 - t2);
+	printf("%s", name.c_str());
+	printf(" time parall is:: %lf sec\n\n", duration.count());
 }
 
 /// ‘ункци€ PrintAverageVals() печатает элементы массива <i>average_vals</i> на консоль;
@@ -150,14 +212,29 @@ int main()
 
 		PrintMatrix(matrix, numb_rows, numb_cols);
 
-		std::thread first_thr(FindAverageValues, eprocess_type::by_rows, matrix, numb_rows, numb_cols, average_vals_in_rows);
-		std::thread second_thr(FindAverageValues, eprocess_type::by_cols, matrix, numb_rows, numb_cols, average_vals_in_cols);
+		printf("\nParall:\n");
+
+		std::thread first_thr(parall_FindAverageValues, eprocess_type::by_rows, matrix, numb_rows, numb_cols, average_vals_in_rows);
+		std::thread second_thr(parall_FindAverageValues, eprocess_type::by_cols, matrix, numb_rows, numb_cols, average_vals_in_cols);
 
 		first_thr.join();
 		second_thr.join();
 
 		PrintAverageVals(eprocess_type::by_rows, average_vals_in_rows, numb_rows);
 		PrintAverageVals(eprocess_type::by_cols, average_vals_in_cols, numb_cols);
+
+		printf("\nSerail:\n");
+
+		std::thread first_thr_2(FindAverageValues, eprocess_type::by_rows, matrix, numb_rows, numb_cols, average_vals_in_rows);
+		std::thread second_thr_2(FindAverageValues, eprocess_type::by_cols, matrix, numb_rows, numb_cols, average_vals_in_cols);
+
+		first_thr_2.join();
+		second_thr_2.join();
+
+		PrintAverageVals(eprocess_type::by_rows, average_vals_in_rows, numb_rows);
+		PrintAverageVals(eprocess_type::by_cols, average_vals_in_cols, numb_cols);
+
+
 	}
 	catch (std::exception& except)
 	{
@@ -165,6 +242,7 @@ int main()
 		except.what();
 		status = ERROR_STATUS;
 	}
+
 
 	return status;
 }
